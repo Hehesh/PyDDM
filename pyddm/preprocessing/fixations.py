@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 
+# List to DF
 def rasterize_fixations(df: pd.DataFrame) -> pd.DataFrame:
     """
     Expand each trial's fixation sequence (a list/array of codes) into
@@ -54,10 +55,9 @@ def rasterize_fixations(df: pd.DataFrame) -> pd.DataFrame:
         )
     return out
 
-import numpy as np
-import pandas as pd
 
-def generate_fixations_from_long(
+# DF to list
+def derasterize_fixations(
     df_long: pd.DataFrame,
     *,
     trial_col: str = "trial",
@@ -71,7 +71,7 @@ def generate_fixations_from_long(
     pad_value: int = 0
 ) -> np.ndarray:
     """
-    Inverse of reformat_fixations: long DF -> per-trial binned sequences.
+    Inverse of rasterize_fixations: long DF -> per-trial binned sequences.
 
     Expects df_long to contain rows for a single dataset with columns:
       trial_col, loc_col, start_col, end_col  (end exclusive).
