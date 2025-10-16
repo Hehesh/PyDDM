@@ -1,9 +1,10 @@
 import numpy as np
 import pandas as pd
-from fixations import derasterize_fixations
+from pyddm.preprocessing.fixations import derasterize_fixations
 
 def derasterize_data(
     df: pd.DataFrame,
+    subject_col: str,
     trial_col: str,
     start_col: str = "fix_start",
     end_col: str = "fix_end",
@@ -13,45 +14,61 @@ def derasterize_data(
     seq_col: str = "fix_sequence",
 ) -> pd.DataFrame:
     """
-    Transform fixation data from start/end timestamps into per-trial fixation sequences.
+    Construct per-(subject, trial) fixation sequences from raw fixation data.
+
+    This function aggregates fixation-level data into per-trial sequences of
+    fixation locations for each subject. Each (subject, trial) group is
+    derasterized into a time-indexed NumPy array using
+    `derasterize_fixations()`.
 
     Parameters
-    -------
+    ----------
     df : pd.DataFrame
-        Long-format DataFrame containing fixation data with at least the columns
-        specified by `trial_col`, `start_col`, `end_col`, and `loc_col`.
+        Long-format DataFrame containing fixation-level data with at least
+        the columns specified by `subject_col`, `trial_col`, `start_col`,
+        `end_col`, and `loc_col`.
+    subject_col : str
+        Column identifying each subject or participant.
     trial_col : str
-        Name of the column identifying each trial.
+        Column identifying the trial number within each subject.
     start_col : str, default "fix_start"
         Column containing the inclusive start timestamp of each fixation.
     end_col : str, default "fix_end"
         Column containing the inclusive end timestamp of each fixation.
     loc_col : str, default "fix_location"
-        Column containing integer codes for fixation locations.
+        Column containing integer-coded fixation locations.
     fill_code : int, default 0
-        Value used to fill time indices not covered by any fixation (gaps).
+        Integer code used to fill time indices not covered by a fixation.
     dtype : np.dtype, default np.int8
         Data type of the resulting fixation sequences.
     seq_col : str, default "fix_sequence"
-        Name of the new column containing each trial’s fixation sequence array.
+        Name of the new column containing the per-trial fixation sequence.
 
-    Outputs
-    --------
-    pd.DataFrame
-        A trial-level DataFrame where each row corresponds to a single trial.
+    Returns
+    -------
+    result : pd.DataFrame
+        A trial-level DataFrame with one row per (subject, trial) pair.
         Columns include:
-        - The preserved metadata columns from the first fixation of each trial.
-        - A `seq_col` column containing a NumPy array (1D) representing the
-          full fixation sequence for that trial.
+        - `subject_col` (int): subject ID
+        - `trial_col` (int): trial ID
+        - `loc_col` (int): location code from the first fixation
+        - `seq_col` (np.ndarray): 1D NumPy array (dtype=`dtype`) representing
+          the full derasterized fixation sequence.
     """
-    # stable sort so equal starts keep input order
-    df_sorted = df.sort_values([trial_col, start_col], kind="mergesort")
+
+    if df[subject_col].isna().any() or df[trial_col].isna().any():
+        raise ValueError(f"{subject_col} and {trial_col} must not contain NaNs.")
+
+    df = df.copy()
+
+    df_sorted = df.sort_values([subject_col, trial_col, start_col], kind="mergesort")
 
     rows = []
-    for _, g in df_sorted.groupby(trial_col, sort=False):
-        # build sequence for this trial
+    seqs = []
+
+    for _, g in df_sorted.groupby([subject_col, trial_col], sort=False):
         seq = derasterize_fixations(
-            g[[start_col, end_col, loc_col]],
+            g,
             start_col=start_col,
             end_col=end_col,
             loc_col=loc_col,
@@ -59,12 +76,20 @@ def derasterize_data(
             dtype=dtype,
         )
 
-        # take the first row's metadata
         first = g.iloc[0]
-        cols = list(dict.fromkeys(([trial_col, loc_col])))
-        data = {c: first[c] for c in cols if c in g.columns}
+        data = {
+            subject_col: int(first[subject_col]),
+            trial_col: int(first[trial_col]),
+            loc_col: int(first[loc_col]),
+        }
 
-        data[seq_col] = seq
         rows.append(data)
+        seqs.append(np.array(seq, dtype=dtype, copy=True))
 
-    return pd.DataFrame(rows)
+    result = pd.DataFrame(rows)
+    result[subject_col] = result[subject_col].astype(int)
+    result[trial_col] = result[trial_col].astype(int)
+    result[loc_col] = result[loc_col].astype(int)
+    result[seq_col] = pd.Series(seqs, dtype=object)
+
+    return result
