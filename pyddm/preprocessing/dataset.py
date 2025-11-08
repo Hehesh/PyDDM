@@ -1,6 +1,72 @@
 import numpy as np
 import pandas as pd
-from pyddm.preprocessing.fixations import derasterize_fixations
+from pyddm.preprocessing.fixations import *
+
+def rasterize_data(
+    df: pd.DataFrame,
+    *,
+    parcode_col: str = "parcode",
+    trial_col: str = "trial",
+    seq_col: str = "sequence",
+    keep_cols: "str | list[str]" = "all",   # "all" or a list of column names to keep
+    drop_seq_in_output: bool = True,        # don't include the sequence column in the output
+) -> pd.DataFrame:
+    """
+    Expand per-row fixation sequences into long-format fixations and
+    preserve original row metadata.
+
+    Returns a DataFrame with:
+      [<kept metadata cols>, 'fix_start', 'fix_end', 'fix_location']
+
+    Parameters
+    ----------
+    df : DataFrame with at least [parcode_col, trial_col, seq_col]
+    parcode_col, trial_col, seq_col : str
+        Column names for participant, trial, and 1D fixation sequence.
+    keep_cols : "all" | list[str]
+        - "all": keep every column from `df` except `seq_col` (default).
+        - list: keep only these columns (they will be added to the output).
+    drop_seq_in_output : bool
+        If True, the sequence column is not included in the output.
+    """
+    req = [parcode_col, trial_col, seq_col]
+    missing = [c for c in req if c not in df.columns]
+    if missing:
+        raise ValueError(f"Missing required columns: {missing}")
+
+    # Decide which metadata columns to keep
+    if keep_cols == "all":
+        meta_cols = [c for c in df.columns if c != seq_col]
+        if drop_seq_in_output is False:  # rare: user wants sequence copied too
+            meta_cols = list(df.columns)
+    else:
+        meta_cols = list(dict.fromkeys(keep_cols))  # dedupe, preserve order
+        # Always ensure IDs exist in output
+        for c in (parcode_col, trial_col):
+            if c not in meta_cols:
+                meta_cols.append(c)
+
+    out_frames = []
+
+    for _, row in df.iterrows():
+        seq = np.asarray(row[seq_col])
+        ras = rasterize_fixations(seq)  # uses your inclusive convention, skips 0s
+        if ras.empty:
+            continue
+
+        # Attach metadata from the source row to each rasterized segment
+        for c in meta_cols:
+            ras[c] = row[c]
+
+        # Order columns: metadata first, then fixation columns
+        cols_order = [*meta_cols, "fix_start", "fix_end", "fix_location"]
+        ras = ras[cols_order]
+        out_frames.append(ras)
+
+    if not out_frames:
+        return pd.DataFrame(columns=[*meta_cols, "fix_start", "fix_end", "fix_location"])
+
+    return pd.concat(out_frames, ignore_index=True)
 
 def derasterize_data(
     df: pd.DataFrame,
@@ -66,6 +132,8 @@ def derasterize_data(
     rows = []
     seqs = []
 
+    count = 0
+
     for _, g in df_sorted.groupby([subject_col, trial_col], sort=False):
         seq = derasterize_fixations(
             g,
@@ -75,21 +143,23 @@ def derasterize_data(
             fill_code=fill_code,
             dtype=dtype,
         )
+        if count == 0:
+            print(g)
+            count += 1
 
         first = g.iloc[0]
         data = {
             subject_col: int(first[subject_col]),
             trial_col: int(first[trial_col]),
             loc_col: int(first[loc_col]),
+            seq_col: np.array(seq, dtype=dtype, copy=True)
         }
 
         rows.append(data)
-        seqs.append(np.array(seq, dtype=dtype, copy=True))
 
     result = pd.DataFrame(rows)
     result[subject_col] = result[subject_col].astype(int)
     result[trial_col] = result[trial_col].astype(int)
     result[loc_col] = result[loc_col].astype(int)
-    result[seq_col] = pd.Series(seqs, dtype=object)
 
     return result
