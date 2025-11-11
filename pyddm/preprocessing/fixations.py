@@ -25,7 +25,7 @@ def rasterize_fixations(seq: np.ndarray) -> pd.DataFrame:
 
     rows = []
     for s, e_excl, lab in zip(starts, ends_excl, labels):
-        if lab == 0:  # skip transitions
+        if lab in (0,4):  # skip transitions
             continue
         e_incl = e_excl - 1
         rows.append({
