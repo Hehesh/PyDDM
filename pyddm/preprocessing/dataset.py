@@ -5,7 +5,7 @@ from pyddm.preprocessing.fixations import *
 def rasterize_data(
     df: pd.DataFrame,
     *,
-    parcode_col: str = "parcode",
+    subject_col: str = "subject",
     trial_col: str = "trial",
     seq_col: str = "sequence",
     keep_cols: "str | list[str]" = "all",   # "all" or a list of column names to keep
@@ -29,7 +29,7 @@ def rasterize_data(
     drop_seq_in_output : bool
         If True, the sequence column is not included in the output.
     """
-    req = [parcode_col, trial_col, seq_col]
+    req = [subject_col, trial_col, seq_col]
     missing = [c for c in req if c not in df.columns]
     if missing:
         raise ValueError(f"Missing required columns: {missing}")
@@ -42,7 +42,7 @@ def rasterize_data(
     else:
         meta_cols = list(dict.fromkeys(keep_cols))  # dedupe, preserve order
         # Always ensure IDs exist in output
-        for c in (parcode_col, trial_col):
+        for c in (subject_col, trial_col):
             if c not in meta_cols:
                 meta_cols.append(c)
 
