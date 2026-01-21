@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from pyddm.preprocessing.fixations import *
 
+# tabular to long form
 def rasterize_data(
     df: pd.DataFrame,
     *,
@@ -68,6 +69,7 @@ def rasterize_data(
 
     return pd.concat(out_frames, ignore_index=True)
 
+# long form to tabular
 def derasterize_data(
     df: pd.DataFrame,
     subject_col: str,
@@ -144,7 +146,6 @@ def derasterize_data(
             dtype=dtype,
         )
         if count == 0:
-            print(g)
             count += 1
 
         first = g.iloc[0]
