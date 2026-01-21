@@ -44,40 +44,28 @@ def derasterize_fixations(
     loc_col: str = "fix_location",
     fill_code: int = 0,
     dtype=np.int8,
-) -> np.ndarray:
+) -> tuple:
     """
-    Single-trial: long DF of fixations -> sequence (1D array of ints).
-
-    Parameters
-    ----------
-    df_long : pd.DataFrame
-        Must have columns [loc_col, start_col, end_col].
-        One row per fixation segment.
-    start_col, end_col, loc_col : str
-        Column names for start (inclusive), end (inclusive), and location code.
-    fill_code : int
-        Code used where there is no fixation (gaps).
-    dtype : np.dtype
-        dtype of the returned 1D array.
+    Single-trial: long DF of fixations -> sequence (tuple of ints).
 
     Returns
     -------
-    np.ndarray
-        1D array for the single trial (length = max(fix_end) + 1),
-        or empty array if df_long is empty.
+    tuple
+        Tuple of ints for the single trial (length = max(fix_end) + 1),
+        or empty tuple if df_long is empty.
     """
     if df_long.empty:
-        return np.array([], dtype=dtype)
+        return ()
 
     g = df_long[[start_col, end_col, loc_col]].copy()
     g[start_col] = g[start_col].astype(int)
-    g[end_col]   = g[end_col].astype(int)
-    g[loc_col]   = g[loc_col].astype(int)
+    g[end_col] = g[end_col].astype(int)
+    g[loc_col] = g[loc_col].astype(int)
     g = g.sort_values(start_col)
 
     L = int(g[end_col].max()) + 1
     if L <= 0:
-        return np.array([], dtype=dtype)
+        return ()
 
     seq = np.full(L, fill_code, dtype=dtype)
 
@@ -89,4 +77,4 @@ def derasterize_fixations(
         e2 = min(e, L - 1)              # inclusive clamp
         seq[s2:e2 + 1] = lab            # inclusive slice
 
-    return seq
+    return tuple(seq.tolist())

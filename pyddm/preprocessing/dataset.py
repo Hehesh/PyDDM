@@ -9,8 +9,9 @@ def rasterize_data(
     subject_col: str = "subject",
     trial_col: str = "trial",
     seq_col: str = "sequence",
-    keep_cols: "str | list[str]" = "all",   # "all" or a list of column names to keep
-    drop_seq_in_output: bool = True,        # don't include the sequence column in the output
+    keep_cols: "str | list[str]" = "all",
+    process_cols: bool = False,
+    drop_seq_in_output: bool = True,
 ) -> pd.DataFrame:
     """
     Expand per-row fixation sequences into long-format fixations and
@@ -67,6 +68,16 @@ def rasterize_data(
     if not out_frames:
         return pd.DataFrame(columns=[*meta_cols, "fix_start", "fix_end", "fix_location"])
 
+    if process_cols:
+        # Calculate fixation duration, order, and reverse order
+        out_df = pd.concat(out_frames, ignore_index=True)
+        out_df['fix_duration'] = out_df['fix_end'] - out_df['fix_start']
+        out_df['fix_num'] = out_df.groupby([subject_col, trial_col]).cumcount() + 1
+        out_df['fix_num_rev'] = out_df.groupby([subject_col, trial_col])['fix_num'].transform(
+            lambda x: x.max() - x + 1
+        )
+        return out_df
+
     return pd.concat(out_frames, ignore_index=True)
 
 # long form to tabular
@@ -80,48 +91,22 @@ def derasterize_data(
     fill_code: int = 0,
     dtype=np.int8,
     seq_col: str = "fix_sequence",
+    process_cols: list[str] | None = None,
+    keep_cols: list[str] | None = None,
 ) -> pd.DataFrame:
     """
-    Construct per-(subject, trial) fixation sequences from raw fixation data.
-
-    This function aggregates fixation-level data into per-trial sequences of
-    fixation locations for each subject. Each (subject, trial) group is
-    derasterized into a time-indexed NumPy array using
-    `derasterize_fixations()`.
+    Construct per-(subject, trial) fixation sequences from raw fixation data,
+    while preserving trial-level columns.
 
     Parameters
     ----------
-    df : pd.DataFrame
-        Long-format DataFrame containing fixation-level data with at least
-        the columns specified by `subject_col`, `trial_col`, `start_col`,
-        `end_col`, and `loc_col`.
-    subject_col : str
-        Column identifying each subject or participant.
-    trial_col : str
-        Column identifying the trial number within each subject.
-    start_col : str, default "fix_start"
-        Column containing the inclusive start timestamp of each fixation.
-    end_col : str, default "fix_end"
-        Column containing the inclusive end timestamp of each fixation.
-    loc_col : str, default "fix_location"
-        Column containing integer-coded fixation locations.
-    fill_code : int, default 0
-        Integer code used to fill time indices not covered by a fixation.
-    dtype : np.dtype, default np.int8
-        Data type of the resulting fixation sequences.
-    seq_col : str, default "fix_sequence"
-        Name of the new column containing the per-trial fixation sequence.
-
-    Returns
-    -------
-    result : pd.DataFrame
-        A trial-level DataFrame with one row per (subject, trial) pair.
-        Columns include:
-        - `subject_col` (int): subject ID
-        - `trial_col` (int): trial ID
-        - `loc_col` (int): location code from the first fixation
-        - `seq_col` (np.ndarray): 1D NumPy array (dtype=`dtype`) representing
-          the full derasterized fixation sequence.
+    process_cols : list[str] or None
+        Names for processed columns as a result of rasterize data. If None,
+        no additional columns are excluded.
+    keep_cols : list[str] or None
+        Additional columns to carry through to the output. These must be
+        constant within each (subject, trial). If None, automatically keeps
+        all non-fixation columns.
     """
 
     if df[subject_col].isna().any() or df[trial_col].isna().any():
@@ -129,12 +114,21 @@ def derasterize_data(
 
     df = df.copy()
 
+    # Columns used for fixation structure
+    fixation_cols = {start_col, end_col, loc_col}  
+    if process_cols is not None:
+        fixation_cols.update(process_cols)
+
+    # Determine columns to carry forward
+    if keep_cols is None:
+        keep_cols = [
+            c for c in df.columns
+            if c not in fixation_cols and c not in {subject_col, trial_col}
+        ]
+
     df_sorted = df.sort_values([subject_col, trial_col, start_col], kind="mergesort")
 
     rows = []
-    seqs = []
-
-    count = 0
 
     for _, g in df_sorted.groupby([subject_col, trial_col], sort=False):
         seq = derasterize_fixations(
@@ -145,22 +139,26 @@ def derasterize_data(
             fill_code=fill_code,
             dtype=dtype,
         )
-        if count == 0:
-            count += 1
 
         first = g.iloc[0]
+
         data = {
             subject_col: int(first[subject_col]),
-            trial_col: int(first[trial_col]),
-            loc_col: int(first[loc_col]),
-            seq_col: np.array(seq, dtype=dtype, copy=True)
+            trial_col: int(first[trial_col])
         }
+
+        # Carry trial-level columns
+        for col in keep_cols:
+            data[col] = first[col]
+
+        data[seq_col] = seq
 
         rows.append(data)
 
     result = pd.DataFrame(rows)
+
+    # Ensure correct dtypes
     result[subject_col] = result[subject_col].astype(int)
     result[trial_col] = result[trial_col].astype(int)
-    result[loc_col] = result[loc_col].astype(int)
 
     return result
