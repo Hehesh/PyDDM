@@ -6,4 +6,6 @@
 *.npy
 .cache
 *.pdf
+*.svg
 test0420.py
+.python-version

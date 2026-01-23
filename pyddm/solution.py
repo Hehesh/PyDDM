@@ -351,7 +351,7 @@ class Solution(object):
         """The probability of not responding during the time limit."""
         udprob = 1 - np.sum(self.choice_upper) - np.sum(self.choice_lower)
         if udprob < 0:
-            _logger.warning("Setting undecided probability from %f to 0" % udprob)
+            # _logger.warning("Setting undecided probability from %f to 0" % udprob)
             _logger.debug(self.model_parameters)
             udprob = 0
         return udprob

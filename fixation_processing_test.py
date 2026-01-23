@@ -9,7 +9,6 @@ def test_fixations_dfToList(df):
 def test_fixations_listToDf(sequence):
     return fixations.rasterize_fixations(sequence)
 
-
 def create_test_cases():
     # Create df with one trial's info
     # Create list by hand
